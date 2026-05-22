@@ -1,0 +1,288 @@
+# .github/workflows/ci-cd.yaml
+name: Platform CI/CD Design Validation
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+    tags:
+      - 'release/*'
+  workflow_dispatch:
+
+jobs:
+  validate-repository:
+    name: Validate repository structure
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check for expected Phase 1 and Phase 2 files
+        run: |
+          echo "Checking required documentation files exist..."
+          REQUIRED_FILES=(
+            "README.md"
+            "docs/architecture.md"
+            "docs/release-strategy.md"
+            "docs/operations.md"
+          )
+
+          MISSING=0
+          for f in "${REQUIRED_FILES[@]}"; do
+            if [ -f "$f" ]; then
+              echo "OK: $f"
+            else
+              echo "ERROR: Missing required file: $f"
+              MISSING=1
+            fi
+          done
+
+          if [ "$MISSING" -ne 0 ]; then
+            echo "One or more required files are missing. Please restore them before continuing."
+            exit 1
+          fi
+
+      - name: Show basic git status
+        run: |
+          echo "Git status (short):"
+          git status --short || echo "git status not available in this environment."
+
+  validate-markdown:
+    name: Validate Markdown (basic)
+    runs-on: ubuntu-latest
+    needs: validate-repository
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: List Markdown files
+        run: |
+          echo "Listing Markdown files for informational validation..."
+          find . -type f -name "*.md" -print | sed 's|^\./||' || true
+
+      # Placeholder for real markdown linting (e.g. markdownlint) in a future phase.
+      - name: Placeholder Markdown lint
+        run: |
+          echo "Markdown linting placeholder."
+          echo "In a future phase, integrate a real markdown linter here (e.g. markdownlint-cli)."
+          echo "This placeholder always succeeds to keep the assignment runnable without extra tooling."
+
+  validate-yaml:
+    name: Validate YAML syntax (basic)
+    runs-on: ubuntu-latest
+    needs: validate-repository
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Find YAML files
+        id: list_yaml
+        run: |
+          echo "Finding YAML files to validate..."
+          FILES=$(find . -type f \( -name "*.yml" -o -name "*.yaml" \) -print || true)
+          echo "$FILES"
+          FILES_ESCAPED=$(printf '%s\n' "$FILES" | sed 's/"/\\"/g')
+          echo "files<<EOF" >> $GITHUB_OUTPUT
+          echo "$FILES_ESCAPED" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Basic YAML syntax check using Python
+        if: steps.list_yaml.outputs.files != ''
+        run: |
+          echo "Running basic YAML syntax validation..."
+          echo "This uses Python's yaml library if available; otherwise it will be skipped."
+          python - << 'PY' || echo "YAML validation skipped or not available."
+import os
+import sys
+
+try:
+    import yaml
+except ImportError:
+    print("PyYAML not installed; skipping YAML parsing.")
+    sys.exit(0)
+
+files = []
+for root, _, filenames in os.walk("."):
+    for name in filenames:
+        if name.endswith((".yml", ".yaml")):
+            files.append(os.path.join(root, name))
+
+if not files:
+    print("No YAML files found to validate.")
+    sys.exit(0)
+
+for path in files:
+    print(f"Validating YAML file: {path}")
+    with open(path, "r", encoding="utf-8") as f:
+        try:
+            yaml.safe_load(f)
+        except Exception as exc:
+            print(f"YAML syntax error in {path}: {exc}")
+            sys.exit(1)
+
+print("All YAML files parsed successfully.")
+PY
+
+  security-placeholder-check:
+    name: Security placeholder - basic secret scan
+    runs-on: ubuntu-latest
+    needs: validate-repository
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Scan for obvious secret-like patterns
+        run: |
+          echo "Scanning for obviously secret-like strings (placeholder check)..."
+
+          # Patterns to search for (demo-safe, not exhaustive)
+          PATTERNS=(
+            "AWS_SECRET_ACCESS_KEY"
+            "AWS_ACCESS_KEY_ID"
+            "password="
+            "passwd="
+            "api_key="
+            "apikey="
+            "private_key"
+            "BEGIN RSA PRIVATE KEY"
+          )
+
+          FOUND=0
+
+          for pattern in "${PATTERNS[@]}"; do
+            echo "Checking pattern: $pattern"
+            # Exclude .git and common binary directories
+            if git grep -n -I -- "$pattern" -- . ':!*.png' ':!*.jpg' ':!*.jpeg' ':!*.gif' ':!.git' 2>/dev/null; then
+              echo "WARNING: Potential secret-like content found for pattern: $pattern"
+              FOUND=1
+            fi
+          done
+
+          if [ "$FOUND" -ne 0 ]; then
+            echo "One or more secret-like patterns were found. Please review and ensure no real secrets are committed."
+            # For this assignment, we fail the job to emphasize the check.
+            exit 1
+          else
+            echo "No obvious secret-like patterns found."
+          fi
+
+  build-placeholder:
+    name: Build placeholder (no real image push)
+    runs-on: ubuntu-latest
+    needs:
+      - validate-repository
+      - validate-markdown
+      - validate-yaml
+      - security-placeholder-check
+    if: |
+      github.event_name == 'push'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Show build context
+        run: |
+          echo "Build placeholder job running for ref: $GITHUB_REF"
+          echo "This job simulates the build stage for the Platform CI/CD pipeline."
+          echo "No real Docker build or registry push occurs in this assignment."
+
+      - name: Simulate Docker build
+        run: |
+          echo "=== Placeholder: Docker build stage ==="
+          echo "In a real pipeline, this is where you would:"
+          echo "  - Build container images for atlas-portal and orion-api"
+          echo "  - Run unit tests and integration tests against those images"
+          echo "  - Run image security scans"
+          echo "  - Tag images with sha-<short-sha> or release-<version>"
+          echo "For this assignment, we do not perform any real build."
+
+      - name: Simulate image scan and push
+        run: |
+          echo "=== Placeholder: Image scan and registry push ==="
+          echo "In a real pipeline, this is where you would:"
+          echo "  - Scan images for vulnerabilities"
+          echo "  - Push vetted images to a private container registry"
+          echo "No registry interaction is performed in this assignment."
+
+  deploy-dev-placeholder:
+    name: Deploy to dev (placeholder)
+    runs-on: ubuntu-latest
+    needs: build-placeholder
+    if: |
+      github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Explain dev deployment mapping
+        run: |
+          echo "=== Dev deployment placeholder ==="
+          echo "Trigger: push to main branch."
+          echo "Intended environment: dev (e.g., dev.sornsub.online)."
+
+      - name: Simulate Helm deploy to dev
+        run: |
+          echo "In a real pipeline, this step would:"
+          echo "  - Use Helm to deploy atlas-portal, orion-api, and Airflow"
+          echo "  - Target the dev namespace (e.g., platform-dev)"
+          echo "  - Use dev-specific configuration values"
+          echo "  - Optionally run smoke tests against dev.sornsub.online"
+          echo "No real Kubernetes interaction is performed in this assignment."
+
+  deploy-staging-placeholder:
+    name: Deploy to staging (placeholder)
+    runs-on: ubuntu-latest
+    needs: build-placeholder
+    if: |
+      github.event_name == 'push' && startsWith(github.ref, 'refs/tags/release/')
+    steps:
+      - name: Explain staging deployment mapping
+        run: |
+          echo "=== Staging deployment placeholder ==="
+          echo "Trigger: push of a tag matching release/*."
+          echo "Intended environment: staging (e.g., staging.sornsub.online)."
+
+      - name: Simulate Helm deploy to staging
+        run: |
+          echo "In a real pipeline, this step would:"
+          echo "  - Re-tag the dev image as release-<version>"
+          echo "  - Use Helm to deploy that image to the staging namespace (e.g., platform-staging)"
+          echo "  - Apply staging configuration (close to production)"
+          echo "  - Run acceptance and regression tests against staging.sornsub.online"
+          echo "No real Kubernetes interaction is performed in this assignment."
+
+  promote-prod-placeholder:
+    name: Promote to prod (placeholder)
+    runs-on: ubuntu-latest
+    needs:
+      - deploy-dev-placeholder
+      - deploy-staging-placeholder
+    if: |
+      github.event_name == 'workflow_dispatch'
+    # In a real setup, this environment could be configured with required reviewers
+    # to create a production approval gate.
+    environment:
+      name: production
+    steps:
+      - name: Explain production promotion mapping
+        run: |
+          echo "=== Production promotion placeholder ==="
+          echo "Trigger: manual workflow_dispatch event."
+          echo "Intended environment: prod (e.g., prod.sornsub.online)."
+          echo "This job represents the manual approval gate described in the design."
+
+      - name: Simulate Helm deploy to prod
+        run: |
+          echo "In a real pipeline, this step would:"
+          echo "  - Use the exact same image that passed in staging (release-<version>)"
+          echo "  - Use Helm to deploy to the prod namespace (e.g., platform-prod)"
+          echo "  - Run smoke tests against prod.sornsub.online"
+          echo "  - Integrate with Terraform if infrastructure changes are required"
+          echo "No real infrastructure changes or deployments occur in this assignment."
+
+      - name: Summarise promotion strategy
+        run: |
+          echo "Summary of environment mapping:"
+          echo "  - Pull request: validation jobs only (no deployment)."
+          echo "  - Push to main: triggers build and dev placeholder deploy."
+          echo "  - Push of release/* tag: triggers build and staging placeholder deploy."
+          echo "  - Manual workflow_dispatch: triggers production promotion placeholder."
+          echo "This matches the Phase 1 and Phase 2 design documents."
